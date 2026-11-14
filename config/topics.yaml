@@ -1,0 +1,50 @@
+project:
+  name: LinkedIn Editorial Agent System
+  purpose: Create evidence-grounded first-person LinkedIn post drafts for human review.
+  demo_focus: Cybersecurity (default); AI Governance; AI Announcements
+  workflow:
+    - AI agents research configured topics and prepare post drafts.
+    - A human reviews each draft and chooses Approve or Discard.
+    - An infographic is generated only after the human approves the draft.
+    - The approved post is copied to LinkedIn by hand, with its first comment and infographic.
+    - The decision, infographic QA, publication status, and evidence are audited.
+
+topics:
+  - id: cybersecurity
+    name: Cybersecurity
+  - id: governance_risk
+    name: AI Governance
+  - id: ai_announcements
+    name: AI Announcements
+
+settings:
+  default_topic: cybersecurity
+  drafts_per_topic: 4
+  target_audience: "Senior management and company executives responsible for technology, security, risk, governance, and workforce decisions"
+  minimum_audience_fit_score: 4
+  max_sources_per_topic: 8
+  min_authority_score: 4.0
+  minimum_faithfulness_score: 0.90
+  max_post_characters: 1300
+  minimum_post_characters: 700
+  maximum_revisions: 3
+  # The demo uses a 30-day window so a verified advisory remains eligible as
+  # background when the live feed has no item from the last two weeks.
+  research_window_days: 30
+  banned_buzzwords:
+    - revolutionary
+    - game-changing
+    - unparalleled
+    - disruptive
+    - in today's fast-paced
+    - in today's landscape
+    - in the ever-evolving
+    - dive into
+    - delve
+    - unlock
+    - it's important to note
+    - it is important to note
+    - game changer
+    - paradigm shift
+    - the future of
+    - thoughts?

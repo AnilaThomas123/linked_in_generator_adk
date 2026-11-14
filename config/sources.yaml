@@ -1,0 +1,72 @@
+sources:
+  - name: CERT/CC Vulnerability Notes
+    topic: cybersecurity
+    url: https://kb.cert.org/vuls/atomfeed/
+    authority_weight: 5
+    source_type: official_advisory
+  - name: NVD
+    topic: cybersecurity
+    url: https://nvd.nist.gov/vuln/data-feeds
+    authority_weight: 5
+    source_type: government
+  - name: NIST AI Risk Management Framework
+    topic: governance_risk
+    url: https://www.nist.gov/itl/ai-risk-management-framework
+    authority_weight: 5
+    source_type: standards
+  - name: EU AI Act
+    topic: governance_risk
+    url: https://digital-strategy.ec.europa.eu/en/policies/regulatory-framework-ai
+    authority_weight: 5
+    source_type: regulator
+  - name: arXiv AI
+    topic: ai_announcements
+    url: https://arxiv.org/list/cs.AI/recent
+    authority_weight: 4
+    source_type: research
+  - name: Hugging Face Blog (research)
+    topic: ai_announcements
+    url: https://huggingface.co/blog
+    authority_weight: 4
+    source_type: research
+
+  # Added Nov 2026 from third-party feed directories. NOT yet fetched directly by the author.
+  # Check the run's source diagnostics: FETCHED means it works; any error means remove or replace it.
+  - name: NIST News
+    topic: governance_risk
+    url: https://www.nist.gov/news-events/news/rss.xml
+    authority_weight: 5
+    source_type: standards
+  - name: CERT-EU Security Advisories
+    topic: cybersecurity
+    url: https://cert.europa.eu/publications/security-advisories-rss
+    authority_weight: 5
+    source_type: official_advisory
+  - name: Canadian Centre for Cyber Security Alerts
+    topic: cybersecurity
+    url: https://www.cyber.gc.ca/api/cccs/atom/v1/get?feed=alerts_advisories&lang=en
+    authority_weight: 5
+    source_type: official_advisory
+
+  # AI announcements. Added from third-party listings (Feeder guides, Oct 2026), NOT fetched
+  # directly from the sites. A run's source diagnostics show FETCHED or the error for each one.
+  - name: OpenAI News
+    topic: ai_announcements
+    url: https://openai.com/news/rss.xml
+    authority_weight: 4
+    source_type: vendor_announcement
+  - name: Google DeepMind Blog
+    topic: ai_announcements
+    url: https://deepmind.google/blog/rss.xml
+    authority_weight: 4
+    source_type: vendor_announcement
+  - name: Google AI News (The Keyword)
+    topic: ai_announcements
+    url: https://blog.google/technology/ai/rss/
+    authority_weight: 4
+    source_type: vendor_announcement
+  - name: Hugging Face Blog
+    topic: ai_announcements
+    url: https://huggingface.co/blog/feed.xml
+    authority_weight: 4
+    source_type: vendor_announcement

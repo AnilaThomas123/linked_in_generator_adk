@@ -1,0 +1,2 @@
+"""LinkedIn editorial generator application."""
+
