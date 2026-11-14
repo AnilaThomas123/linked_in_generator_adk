@@ -70,3 +70,32 @@ sources:
     url: https://huggingface.co/blog/feed.xml
     authority_weight: 4
     source_type: vendor_announcement
+
+  # Added Nov 14, 2026 from the article scout config (f3159baa). NOT yet fetched directly by the author.
+  # Check the run's source diagnostics: FETCHED means it works; any error means remove or replace it.
+  # authority_weight values are judgement calls: news outlets 4, government and intergovernmental bodies 5.
+  - name: IAPP News
+    topic: governance_risk
+    url: https://www.iapp.org/news
+    authority_weight: 4
+    source_type: news
+  - name: OECD AI Incidents Monitor
+    topic: governance_risk
+    url: https://oecd.ai/en/incidents
+    authority_weight: 5
+    source_type: government
+  - name: TechCrunch AI
+    topic: ai_announcements
+    url: https://techcrunch.com/category/artificial-intelligence/
+    authority_weight: 4
+    source_type: news
+  - name: Anthropic Newsroom
+    topic: ai_announcements
+    url: https://www.anthropic.com/news
+    authority_weight: 4
+    source_type: vendor_announcement
+  - name: BleepingComputer
+    topic: cybersecurity
+    url: https://www.bleepingcomputer.com/
+    authority_weight: 4
+    source_type: news
