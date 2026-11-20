@@ -44,7 +44,7 @@ POST_RULES = (
     "Output plain text: no headings, no section labels, no markdown, no hashtags. "
     "Use short paragraphs separated by blank lines. "
     "Write like a column that an editor has approved, not a summary of the source. "
-    "Line 1 is the hook: a standalone sentence of 40 to 150 characters that states the most important "
+    "Line 1 is the hook: a standalone sentence of 40 to 150 characters built from the supplied hook_fact. ""Keep every number and date from hook_fact exactly as written. The hook states the most important "
     "consequence, number, cost, or deadline in the evidence. Never start with background, with the "
     "source's name, or with the word 'The'. "
     "Line 2 onward: state the one stance in plain sentences, the claim a CISO or CTO could reasonably "
@@ -125,7 +125,7 @@ def extract_insights(candidate: CandidateArticle) -> InsightExtraction:
         "source sentences as evidence_quotes; never return navigation labels, vendor directory "
         "rows, page chrome, or partial fragments. If unsupported, "
         "return an empty claim list. Do not invent metrics, names, dates, or outcomes. "
-        "Also identify the practical reader value and any limitation or missing context. "
+        "Also return hook_fact: one sentence copied word-for-word from SOURCE TEXT that states the most ""decision-relevant number, date, cost, deadline, or consequence. Use an empty string if the source has none. ""Also identify the practical reader value and any limitation or missing context. "
         "Explicitly explain what the affected technology or deployment is, who may be exposed, "
         "what the source establishes, what it does not establish, and what decision a senior "
         "leader should require from the responsible team. Do not assume readers know the jargon.",
@@ -219,6 +219,7 @@ def revise_draft(draft: Draft, reasons: list[str], revision: int, min_chars: int
             "failed_editorial_checks": reasons,
             "current_character_count": len(draft.content),
             "required_character_range": [min_chars, max_chars],
+            "hook_fact": draft.extraction.hook_fact if draft.extraction else "",
             "evidence": [source.model_dump() for source in draft.sources],
         }),
     )

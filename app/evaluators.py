@@ -147,7 +147,7 @@ def editorial_gate(
     bad_hook = not (40 <= len(first_line) <= 150)
     has_question = closing_question_ok(draft)
     title_words = draft.title.split()
-    generic_titles = {"what leaders need to know", "an important update", "security update", "summary", "advice"}
+    generic_titles = {"what leaders need to know", "an important update", "security update", "summary", "advice", "generateddraft"}
     weak_title = len(title_words) < 5 or len(title_words) > 16 or draft.title.strip().lower() in generic_titles
     signal_terms = executive_signal_terms or [
         "decision", "risk", "control", "deployment", "investment", "compliance",

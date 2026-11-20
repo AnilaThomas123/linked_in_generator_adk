@@ -189,8 +189,9 @@ def run_insight_extractor() -> dict:
         extraction = extract_insights(candidate)
         # Keep only quotes found verbatim in the fetched text; a paraphrased quote would fail the faithfulness gate.
         kept, dropped = verbatim_quotes(candidate, extraction.evidence_quotes)
-        pruning.append({"url": candidate.url, "kept": len(kept), "dropped": dropped})
-        if len(kept) < MIN_VERBATIM_QUOTES:
+        hook_kept, _ = verbatim_quotes(candidate, [extraction.hook_fact]) if extraction.hook_fact.strip() else ([], [])
+        pruning.append({"url": candidate.url, "kept": len(kept), "dropped": dropped, "hook_verbatim": bool(hook_kept)})
+        if len(kept) < MIN_VERBATIM_QUOTES or not hook_kept:
             continue
         extraction = extraction.model_copy(update={"evidence_quotes": kept})
         extractions.append({"candidate": candidate.model_dump(), "extraction": extraction.model_dump()})

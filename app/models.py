@@ -103,6 +103,8 @@ class InsightExtraction(BaseModel):
     contrarian_point: str
     factual_claims: list[str]
     evidence_quotes: list[str] = Field(max_length=5)
+    # One sentence copied word-for-word from the source: the most decision-relevant number, date, cost, or consequence.
+    hook_fact: str = ""
     reader_value: str = ""
     limitations: str = ""
 

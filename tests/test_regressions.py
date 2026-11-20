@@ -10,7 +10,7 @@ import app.dashboard as dashboard
 import app.generation as generation
 import app.selection as selection
 from app import workflow_state
-from app.evaluators import claims_gate, verbatim_quotes
+from app.evaluators import claims_gate, editorial_gate, verbatim_quotes
 from app.models import (
     CandidateArticle,
     InsightExtraction,
@@ -196,9 +196,9 @@ def test_verbatim_quotes_keeps_exact_quotes_and_drops_paraphrases():
     assert dropped == ["The vendor shipped a fix."]
 
 
-def _extraction(quotes: list[str]) -> InsightExtraction:
+def _extraction(quotes: list[str], hook: str = "") -> InsightExtraction:
     return InsightExtraction(core_contribution="c", enterprise_impact="e", contrarian_point="p",
-                             factual_claims=["f"], evidence_quotes=quotes)
+                             factual_claims=["f"], evidence_quotes=quotes, hook_fact=hook)
 
 
 def test_extractor_drops_paraphrased_quotes_and_skips_articles_with_too_few_exact_quotes(monkeypatch):
@@ -208,7 +208,8 @@ def test_extractor_drops_paraphrased_quotes_and_skips_articles_with_too_few_exac
         return {"candidate": candidate.model_dump(), "evaluation": {}}
 
     responses = iter([
-        _extraction(["The vendor released a patch for the library.", "Admins should update before Friday.", "Invented sentence."]),
+        _extraction(["The vendor released a patch for the library.", "Admins should update before Friday.", "Invented sentence."],
+                    hook="Admins should update before Friday."),
         _extraction(["The vendor shipped a fix.", "Also invented."]),
     ])
     monkeypatch.setattr(agent, "extract_insights", lambda candidate: next(responses))
@@ -227,3 +228,20 @@ def test_extractor_drops_paraphrased_quotes_and_skips_articles_with_too_few_exac
     ]
     pruning = workflow_state.read_state("quote_pruning", [])
     assert [entry["dropped"] for entry in pruning] == [["Invented sentence."], ["The vendor shipped a fix.", "Also invented."]]
+
+
+def test_article_without_a_verbatim_hook_fact_is_skipped(monkeypatch):
+    candidate = CandidateArticle(source_id="s", topic_id="cybersecurity", title="Patch notice", url="https://x/h",
+                                 publisher="Pub", text="The vendor released a patch for the library.", authority_score=5.0)
+    monkeypatch.setattr(agent, "extract_insights", lambda c: _extraction(
+        ["The vendor released a patch for the library."], hook="A paraphrased hook."))
+    workflow_state.write_state("credibility", {"approved": [{"candidate": candidate.model_dump(), "evaluation": {}}], "rejected": []})
+    workflow_state.write_state("assignments", [])
+    agent.run_insight_extractor()
+    assert workflow_state.read_state("insights", []) == []
+
+
+def test_title_equal_to_the_schema_name_fails_the_editorial_gate():
+    draft = _draft().model_copy(update={"title": "GeneratedDraft"})
+    reasons = editorial_gate(draft, 1300, [], 700, None, []).reasons
+    assert any("Title is too generic" in reason for reason in reasons)
