@@ -137,7 +137,7 @@ function gateState(d, gate){const e=latest(d, gate);return e?e.status:'NOT_RUN';
 const DECISION_TEXT={PENDING:'waiting for your decision',APPROVED:'approved',DISCARDED:'discarded'};
 const INFO_TEXT={NOT_REQUESTED:'infographic not created yet',GENERATING:'infographic being drawn',READY:'infographic ready',FAILED:'infographic failed'};
 const PUB_TEXT={NOT_PUBLISHED:'not posted yet',MANUAL_REQUIRED:'waiting for you to post on LinkedIn',MANUALLY_PUBLISHED:'posted by you on LinkedIn',PUBLISHED:'posted on LinkedIn'};
-function statusLine(d){return esc(d.topic_name)+' Â· '+(DECISION_TEXT[d.decision]||d.decision)+' Â· '+(PUB_TEXT[d.publication_status]||d.publication_status)+' Â· '+(INFO_TEXT[d.infographic_status]||d.infographic_status);}
+function statusLine(d){return esc(d.topic_name)+' · '+(DECISION_TEXT[d.decision]||d.decision)+' · '+(PUB_TEXT[d.publication_status]||d.publication_status)+' · '+(INFO_TEXT[d.infographic_status]||d.infographic_status);}
 function tracker(d){
   const decision = d.decision==='APPROVED'?'PASS':d.decision==='DISCARDED'?'FAIL':'PENDING';
   const info = {READY:'PASS',FAILED:'FAIL',NOT_REQUESTED:'NOT_RUN',GENERATING:'PENDING'}[d.infographic_status] || 'NOT_RUN';
@@ -151,15 +151,15 @@ function tracker(d){
     ['Infographic image', info, 'The image card drawn for this post'],
     ['Posted on LinkedIn', pub, 'You copy the post to LinkedIn yourself and confirm it here'],
   ];
-  return `<div class='tracker'>${steps.map(([label,state,desc])=>`<span class='chip ${state}' title='${esc(desc)}'>${label}</span>`).join("<span class='arrow'>â†’</span>")}</div>`;
+  return `<div class='tracker'>${steps.map(([label,state,desc])=>`<span class='chip ${state}' title='${esc(desc)}'>${label}</span>`).join("<span class='arrow'>→</span>")}</div>`;
 }
 async function runOnce(){
   const t=document.getElementById('topic').value;
   const btn=document.getElementById('runBtn'), status=document.getElementById('runStatus');
   const started=Date.now();
-  btn.disabled=true; btn.textContent='Generating draftsâ€¦';
+  btn.disabled=true; btn.textContent='Generating drafts…';
   status.className=''; status.innerHTML="<span class='spin'></span>Agent started on '"+esc(t)+"'. This can take several minutes. Do not close this page.";
-  const timer=setInterval(()=>{const s=Math.floor((Date.now()-started)/1000);status.innerHTML="<span class='spin'></span>Agent running on '"+esc(t)+"' Â· "+Math.floor(s/60)+"m "+(s%60)+"s elapsed";},1000);
+  const timer=setInterval(()=>{const s=Math.floor((Date.now()-started)/1000);status.innerHTML="<span class='spin'></span>Agent running on '"+esc(t)+"' · "+Math.floor(s/60)+"m "+(s%60)+"s elapsed";},1000);
   try{
     const r=await fetch('/runs?topic='+encodeURIComponent(t),{method:'POST'});
     clearInterval(timer);
