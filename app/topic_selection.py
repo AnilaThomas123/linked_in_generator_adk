@@ -43,6 +43,20 @@ def resolve_topic(text: str | None) -> str | None:
     return _ALIASES.get(key)
 
 
+def topic_in_text(text: str | None) -> str | None:
+    """Find a topic named anywhere in a message, such as 'run the cybersecurity topic'. None when no topic is named."""
+    if not text or not text.strip():
+        return None
+    # Punctuation is dropped, so "ai announcements, please" still matches.
+    padded = " " + " ".join(re.findall(r"[a-z0-9]+", text.lower())) + " "
+    phrases = set(_ALIASES) | {_normalize(topic.id) for topic in load_topics()[0]}
+    phrases = {" ".join(re.findall(r"[a-z0-9]+", phrase)) for phrase in phrases}
+    for phrase in sorted(phrases, key=len, reverse=True):
+        if f" {phrase} " in padded:
+            return resolve_topic(phrase)
+    return None
+
+
 def topic_name(topic_id: str) -> str:
     for topic in load_topics()[0]:
         if topic.id == topic_id:

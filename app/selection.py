@@ -16,6 +16,7 @@ show why a run produced few drafts.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from email.utils import parsedate_to_datetime
@@ -23,6 +24,7 @@ from email.utils import parsedate_to_datetime
 from .generation import research_topic
 from .models import CandidateArticle, ResearchBrief
 from .research import validate_research_brief
+from .workflow_state import state_path, write_state
 
 
 @dataclass
@@ -82,6 +84,27 @@ def date_gate(
     return kept, rejected
 
 
+def repair_brief_references(brief: ResearchBrief) -> tuple[ResearchBrief, list[str]]:
+    """Drop evidence IDs the analyst cited but did not return, and remove topics left with no evidence.
+
+    Only references are removed; no evidence is added. The claim text is still checked downstream
+    by the claims and faithfulness gates. Every removal is returned so it can be audited.
+    """
+    item_ids = {item.id for item in brief.items}
+    repairs: list[str] = []
+    topics = []
+    for topic in brief.topics:
+        kept = list(dict.fromkeys(item_id for item_id in topic.item_ids if item_id in item_ids))
+        dropped = [item_id for item_id in topic.item_ids if item_id not in item_ids]
+        if dropped:
+            repairs.append(f"{topic.headline}: dropped unknown evidence IDs {dropped}")
+        if kept:
+            topics.append(topic.model_copy(update={"item_ids": kept}))
+        else:
+            repairs.append(f"{topic.headline}: removed, no evidence IDs remain")
+    return brief.model_copy(update={"topics": topics}), repairs
+
+
 def screen_candidates(
     topic_id: str,
     topic_name: str,
@@ -107,14 +130,30 @@ def screen_candidates(
             rejections=rejections,
         )
 
-    try:
-        brief = research_topic(topic_id, topic_name, dated, window, covered_topics or [])
-    except Exception as exc:  # noqa: BLE001 - report the analyst failure, never draft without a brief
-        error = f"{type(exc).__name__}: {str(exc)[:240]}"
-        rejections.extend({"stage": "research", "reason": f"Research analyst failed: {error}", "url": c.url, "title": c.title} for c in dated)
-        return ScreenResult(status="ANALYST_ERROR", error=error, rejections=rejections)
+    attempts: list[dict] = []
+    brief = None
+    errors: list[str] = []
+    for attempt in (1, 2):
+        try:
+            brief = research_topic(topic_id, topic_name, dated, window, covered_topics or [])
+        except Exception as exc:  # noqa: BLE001 - report the analyst failure, never draft without a brief
+            error = f"{type(exc).__name__}: {str(exc)[:240]}"
+            rejections.extend({"stage": "research", "reason": f"Research analyst failed: {error}", "url": c.url, "title": c.title} for c in dated)
+            return ScreenResult(status="ANALYST_ERROR", error=error, rejections=rejections)
 
-    errors = validate_research_brief(brief, dated)
+        # Keep the analyst's raw output before repair and validation, one file per attempt.
+        raw_text = json.dumps(brief.model_dump(), indent=2, ensure_ascii=False)
+        state_path(f"research_raw_{topic_id}").write_text(raw_text, encoding="utf-8")
+        state_path(f"research_raw_{topic_id}_attempt{attempt}").write_text(raw_text, encoding="utf-8")
+        had_topics = bool(brief.topics)
+        brief, repairs = repair_brief_references(brief)
+        errors = validate_research_brief(brief, dated)
+        if had_topics and not brief.topics:
+            errors.append("every topic candidate cited evidence IDs the analyst did not return")
+        attempts.append({"attempt": attempt, "repairs": repairs, "errors": errors})
+        if not errors:
+            break
+    write_state(f"analyst_attempts_{topic_id}", attempts)
     item_ids = {item.id for item in brief.items}
     url_by_item = {item.id: item.url for item in brief.items}
     url_to_candidate = {candidate.url: candidate for candidate in dated}

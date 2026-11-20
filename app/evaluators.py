@@ -11,7 +11,13 @@ TEMPLATE_LABELS = [
     "HOOK", "WHAT THE SOURCE SHOWS", "WHY IT MATTERS", "PRACTICAL TAKEAWAY", "QUESTION FOR READERS",
 ]
 # Capitalized words that are not names or evidence terms when they start a sentence.
-_CAPITAL_ALLOWLIST = {"I", "We", "Our", "My", "The", "This", "That", "You", "Your", "It", "If", "When"}
+_CAPITAL_ALLOWLIST = {
+    "I", "We", "Our", "My", "The", "This", "That", "You", "Your", "It", "If", "When",
+    # Role titles and the "plain English" phrase are not names, so they need no source support.
+    "CISO", "CTO", "CIO", "CRO", "CFO", "CEO", "COO", "CSO", "CMO", "VP", "Head", "English",
+    # Words that appear in spelled-out job titles, such as "Chief Information Officer".
+    "Chief", "Information", "Officer", "Director",
+}
 
 try:
     from langsmith import traceable
@@ -28,6 +34,24 @@ def _normalize_quote(value: str) -> str:
     value = re.sub(r"\s+", " ", value).strip()
     boundary_chars = " \t\r\n\"'" + "\u00ab\u00bb\u201c\u201d\u2018\u2019\ufffd"
     return value.strip(boundary_chars)
+
+
+# An extraction needs at least this many quotes that appear verbatim in the source to be used.
+MIN_VERBATIM_QUOTES = 2
+
+
+def verbatim_quotes(candidate: CandidateArticle, quotes: list[str]) -> tuple[list[str], list[str]]:
+    """Split quotes into those found verbatim in the source and those that are not."""
+    source = re.sub(r"\s+", " ", unicodedata.normalize("NFKC", candidate.text)).casefold()
+    kept: list[str] = []
+    dropped: list[str] = []
+    for quote in quotes:
+        normalized = _normalize_quote(quote)
+        if normalized and normalized.casefold() in source:
+            kept.append(quote)
+        else:
+            dropped.append(quote)
+    return kept, dropped
 
 
 @traceable(name="credibility_gate", run_type="chain")

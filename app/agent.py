@@ -4,18 +4,10 @@ from __future__ import annotations
 
 import json
 import os
-from collections.abc import AsyncGenerator
 from pathlib import Path
 from uuid import uuid4
 
-from google.adk.agents import (
-    Agent,
-    BaseAgent,
-    LoopAgent,
-    ParallelAgent,
-    SequentialAgent,
-)
-from google.adk.events import Event
+from google.adk.workflow import START, Workflow, node
 
 from .audit import record
 from .config import ROOT, load_topics
@@ -24,7 +16,11 @@ from .evaluators import (
     claims_gate,
     credibility_gate,
     editorial_gate,
+    MIN_VERBATIM_QUOTES,
     faithfulness_gate,
+    hook_gate,
+    stance_gate,
+    verbatim_quotes,
 )
 from .generation import extract_insights, revise_draft, write_draft
 from .infographic import create_infographic
@@ -37,6 +33,7 @@ from .topic_selection import (
     consume_selected_topic,
     resolve_topic,
     save_selected_topic,
+    topic_in_text,
     topic_name,
 )
 from .research import collect_candidates
@@ -184,12 +181,20 @@ def run_insight_extractor() -> dict:
     assignments = read_state("assignments", [])
     assigned_sources = {source_id for assignment in assignments for source_id in assignment.get("source_ids", [])}
     extractions: list[dict] = []
+    pruning: list[dict] = []
     for item in approved:
         candidate = CandidateArticle.model_validate(item["candidate"])
         if assigned_sources and candidate.source_id not in assigned_sources:
             continue
         extraction = extract_insights(candidate)
+        # Keep only quotes found verbatim in the fetched text; a paraphrased quote would fail the faithfulness gate.
+        kept, dropped = verbatim_quotes(candidate, extraction.evidence_quotes)
+        pruning.append({"url": candidate.url, "kept": len(kept), "dropped": dropped})
+        if len(kept) < MIN_VERBATIM_QUOTES:
+            continue
+        extraction = extraction.model_copy(update={"evidence_quotes": kept})
         extractions.append({"candidate": candidate.model_dump(), "extraction": extraction.model_dump()})
+    write_state("quote_pruning", pruning)
     write_state("insights", extractions)
     return {"stage": "insight_extractor", "extractions": len(extractions)}
 
@@ -328,10 +333,13 @@ def run_editorial_optimizer() -> dict:
                 settings.get("executive_signal_terms", []),
             )
             claims = claims_gate(draft, candidate)
-            current = [faithfulness, editorial, claims]
+            hook = hook_gate(draft)
+            stance = stance_gate(draft)
+            current = [faithfulness, editorial, claims, hook, stance]
             for item in current:
                 item.revision = revision
-            draft.evaluations.extend(current)
+            # Keep only the latest results, so reasons from earlier revisions are not reported as current.
+            draft.evaluations = current
             if all(item.status == "PASS" for item in current):
                 draft.evaluator_status = "PASS"
                 break
@@ -340,7 +348,10 @@ def run_editorial_optimizer() -> dict:
             if revision >= maximum_revisions or faithfulness.status != "PASS":
                 break
             reasons = [reason for item in current if item.status != "PASS" for reason in item.reasons]
-            draft = revise_draft(draft, reasons, revision + 1)
+            draft = revise_draft(
+                draft, reasons, revision + 1,
+                int(settings.get("minimum_post_characters", 700)), int(settings.get("max_post_characters", 1300)),
+            )
         results.append(draft)
     write_state("optimized_drafts", [draft.model_dump() for draft in results])
     return {"stage": "editorial_optimizer", "draft_count": len(results), "passed": sum(d.evaluator_status == "PASS" for d in results)}
@@ -417,90 +428,73 @@ def _has_state(guard: str) -> bool:
     return True
 
 
-class StageAgent(BaseAgent):
-    """Run one deterministic stage and emit at most one ADK event."""
-
-    stage: str
-    guard: str = ""
-
-    def _stage_result(self) -> dict:
-        functions = {
-            "initialize_workflow": initialize_workflow,
-            "scout_ai_agents": scout_ai_agents,
-            "scout_selected": scout_selected,
-            "write_selected": write_selected_drafts,
-            "faithfulness_selected": evaluate_selected_faithfulness,
-            "scout_cybersecurity": scout_cybersecurity,
-            "scout_governance": scout_governance,
-            "credibility_gate": run_credibility_gate,
-            "editorial_assignment_gate": run_editorial_assignment_gate,
-            "insight_extractor": run_insight_extractor,
-            "write_ai_agents": write_ai_agent_drafts,
-            "write_cybersecurity": write_cybersecurity_drafts,
-            "write_governance": write_governance_drafts,
-            "faithfulness_ai_agents": evaluate_ai_agent_faithfulness,
-            "faithfulness_cybersecurity": evaluate_cybersecurity_faithfulness,
-            "faithfulness_governance": evaluate_governance_faithfulness,
-            "editorial_optimizer": run_editorial_optimizer,
-            "final_validation": finalize_drafts,
-        }
-        return functions[self.stage]()
-
-    async def _run_async_impl(self, ctx) -> AsyncGenerator[Event, None]:
-        if not _has_state(self.guard):
-            yield Event(author=self.name)
-            return
-        result = self._stage_result()
-        if self.stage == "final_validation":
-            yield Event(author=self.name, output=result)
-        else:
-            # Intermediate results are persisted by the stage functions. Do not
-            # emit them as node output: ADK workflow nodes may publish once only.
-            yield Event(author=self.name)
+_STAGE_FUNCTIONS = {
+    "scout_selected": scout_selected,
+    "credibility_gate": run_credibility_gate,
+    "editorial_assignment_gate": run_editorial_assignment_gate,
+    "insight_extractor": run_insight_extractor,
+    "write_selected": write_selected_drafts,
+    "faithfulness_selected": evaluate_selected_faithfulness,
+    "editorial_optimizer": run_editorial_optimizer,
+    "final_validation": finalize_drafts,
+}
 
 
-class GuardedAgent(BaseAgent):
-    """Run a child agent only when its upstream evidence exists."""
-
-    guard: str
-
-    async def _run_async_impl(self, ctx) -> AsyncGenerator[Event, None]:
-        if not _has_state(self.guard):
-            yield Event(author=self.name)
-            return
-        async for event in self.sub_agents[0].run_async(ctx):
-            # Child stage agents emit no intermediate outputs, so this wrapper
-            # cannot produce multiple node outputs.
-            yield event
+def _message_text(node_input) -> str:
+    parts = getattr(node_input, "parts", None) or []
+    return " ".join(part.text for part in parts if getattr(part, "text", None))
 
 
-def build_workflow() -> SequentialAgent:
-    scouts = ParallelAgent(name="parallel_domain_scouts", sub_agents=[
-        StageAgent(name="selected_topic_research_analyst", stage="scout_selected"),
-    ])
-    writers = ParallelAgent(name="parallel_ghostwriters", sub_agents=[
-        StageAgent(name="selected_topic_ghostwriter", stage="write_selected", guard="insights:selected"),
-    ])
-    faithfulness = ParallelAgent(name="parallel_faithfulness_gates", sub_agents=[
-        StageAgent(name="selected_topic_faithfulness_gate", stage="faithfulness_selected", guard="drafts:selected"),
-    ])
-    editorial_loop = LoopAgent(name="editorial_optimizer_loop", max_iterations=3, sub_agents=[
-        StageAgent(name="editorial_optimizer", stage="editorial_optimizer"),
-    ])
-    return SequentialAgent(name="editorial_pipeline_workflow", sub_agents=[
-        StageAgent(name="workflow_initializer", stage="initialize_workflow"),
-        scouts,
-        StageAgent(name="credibility_gate", stage="credibility_gate"),
-        StageAgent(name="editorial_assignment_editor", stage="editorial_assignment_gate", guard="approved_candidates"),
-        StageAgent(name="insight_extractor", stage="insight_extractor", guard="assignments"),
-        writers,
-        faithfulness,
-        GuardedAgent(name="guarded_editorial_optimizer_loop", guard="any_faithfulness_drafts", sub_agents=[editorial_loop]),
-        StageAgent(name="final_validation_gate", stage="final_validation"),
+def _start_run(node_input=None) -> dict:
+    """Start a run. A topic named in the chat message applies to this run; otherwise the default topic is used."""
+    requested = topic_in_text(_message_text(node_input))
+    if requested:
+        save_selected_topic(requested)
+    return initialize_workflow()
+
+
+def _stage(stage: str, guard: str = ""):
+    """One deterministic stage as a Workflow node. Every node runs and returns a result so the graph continues;
+    a node whose upstream evidence is missing records that it was skipped."""
+
+    def run(node_input=None) -> dict:
+        if guard and not _has_state(guard):
+            return {"stage": stage, "skipped": guard}
+        return _STAGE_FUNCTIONS[stage]()
+
+    run.__name__ = stage
+    return node(run, name=stage)
+
+
+workflow_initializer = node(_start_run, name="workflow_initializer")
+scout_node = _stage("scout_selected")
+credibility_node = _stage("credibility_gate")
+assignment_node = _stage("editorial_assignment_gate", "approved_candidates")
+extractor_node = _stage("insight_extractor", "assignments")
+writer_node = _stage("write_selected", "insights:selected")
+faithfulness_node = _stage("faithfulness_selected", "drafts:selected")
+# Runs once: the optimizer already retries revisions up to maximum_revisions internally.
+optimizer_node = _stage("editorial_optimizer", "any_faithfulness_drafts")
+final_node = _stage("final_validation")
+
+
+def build_workflow() -> Workflow:
+    return Workflow(name="editorial_pipeline_workflow", edges=[
+        (START, workflow_initializer),
+        (workflow_initializer, scout_node),
+        (scout_node, credibility_node),
+        (credibility_node, assignment_node),
+        (assignment_node, extractor_node),
+        (extractor_node, writer_node),
+        (writer_node, faithfulness_node),
+        (faithfulness_node, optimizer_node),
+        (optimizer_node, final_node),
     ])
 
 
 editorial_pipeline_workflow = build_workflow()
+
+
 def _load_draft(draft_id: str) -> Draft | None:
     path = ROOT / "drafts" / f"{draft_id}.json"
     if not path.exists():
@@ -533,6 +527,17 @@ def approve_draft_for_posting(draft_id: str) -> dict:
     draft.decision = "APPROVED"
     draft.approved_at = now_iso()
     draft = create_infographic(draft)
+    if draft.infographic_status != "READY":
+        # A failed infographic blocks approval: undo the decision and keep the draft pending.
+        draft.decision = "PENDING"
+        draft.approved_at = None
+        save_draft(draft)
+        (ROOT / "drafts" / f"{draft.draft_id}.json").write_text(
+            json.dumps(draft.model_dump(), indent=2, ensure_ascii=False), encoding="utf-8"
+        )
+        return {"status": "BLOCKED", "draft_id": draft_id,
+                "reason": "The infographic failed its checks, so the draft was not approved.",
+                "infographic_error": draft.infographic_error}
     draft = publish_after_approval(draft)
     save_draft(draft)
     (ROOT / "drafts" / f"{draft.draft_id}.json").write_text(
@@ -581,22 +586,5 @@ def replay_saved_run(topic: str = "") -> dict:
     return replay_summaries(topic_id)
 
 
-root_agent = Agent(
-    name="editorial_pipeline_coordinator",
-    model=ADK_MODEL,
-    instruction=(
-        "You coordinate the LinkedIn Editorial Agent System. The user can choose one of three topics: "
-        "cybersecurity (the default when no topic is named), ai governance, or ai announcements. "
-        "When the user names a topic, call choose_topic with it before the pipeline runs. If the user "
-        "names no topic, do not call choose_topic and say the run uses cybersecurity. "
-        "When the user asks to run the pipeline, transfer to editorial_pipeline_workflow. Do not bypass "
-        "the workflow with a single create-draft tool. The workflow drafts first-person LinkedIn posts "
-        "for the named author and presents them for individual human approval. Only call approve_draft_for_posting "
-        "when the human reviewer explicitly approves a named draft_id in this conversation; never "
-        "approve on your own. Approval builds the PNG infographic and a ready-to-post folder. "
-        "Nothing is published automatically. If live research fails or the reviewer asks for a "
-        "replay, call replay_saved_run and say that the output is a replay of saved results."
-    ),
-    sub_agents=[editorial_pipeline_workflow],
-    tools=[choose_topic, approve_draft_for_posting, replay_saved_run],
-)
+# The pipeline is the root agent, so `adk web` runs it directly from the chat message.
+root_agent = editorial_pipeline_workflow

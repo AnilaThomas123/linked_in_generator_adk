@@ -55,7 +55,7 @@ POST_RULES = (
     "End with one question addressed to a named role, such as CISO, CTO, or head of compliance. "
     "Do not end with 'thoughts?' or a generic question. "
     "Do not describe the webpage. "
-    "Target 900 to 1,200 characters and never exceed 1,300 characters. "
+    "Write 900 to 1,200 characters, never fewer than 750 and never more than 1,300. "
     "The title is 8 to 14 words, specific, tension-based, and not a copy of the source title."
 )
 
@@ -207,7 +207,7 @@ def write_draft(candidate: CandidateArticle, extraction: InsightExtraction, draf
     )
 
 
-def revise_draft(draft: Draft, reasons: list[str], revision: int) -> Draft:
+def revise_draft(draft: Draft, reasons: list[str], revision: int, min_chars: int = 700, max_chars: int = 1300) -> Draft:
     """Rewrite only editorial form; source claims and evidence remain fixed."""
     result = _structured(
         GeneratedDraft,
@@ -217,11 +217,11 @@ def revise_draft(draft: Draft, reasons: list[str], revision: int) -> Draft:
         json.dumps({
             "draft": {"title": draft.title, "abstract": draft.abstract, "content": draft.content},
             "failed_editorial_checks": reasons,
+            "current_character_count": len(draft.content),
+            "required_character_range": [min_chars, max_chars],
             "evidence": [source.model_dump() for source in draft.sources],
         }),
     )
     draft.title, draft.abstract, draft.content = result.title, result.abstract, result.content
     draft.stance = result.stance
-    for evaluation in draft.evaluations:
-        evaluation.revision = revision
     return draft

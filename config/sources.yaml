@@ -99,3 +99,10 @@ sources:
     url: https://www.bleepingcomputer.com/
     authority_weight: 4
     source_type: news
+
+  # Added Nov 19, 2026: news reporting on incidents, breaches and state-backed attacks. Feed fetched directly and returned current items.
+  - name: The Record (Recorded Future News)
+    topic: cybersecurity
+    url: https://therecord.media/feed/
+    authority_weight: 4
+    source_type: news
