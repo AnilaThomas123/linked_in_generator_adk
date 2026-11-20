@@ -19,7 +19,7 @@ topics:
 
 settings:
   default_topic: cybersecurity
-  drafts_per_topic: 4
+  drafts_per_topic: 2
   target_audience: "Senior management and company executives responsible for technology, security, risk, governance, and workforce decisions"
   minimum_audience_fit_score: 4
   max_sources_per_topic: 8

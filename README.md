@@ -12,7 +12,7 @@ Topics are defined in `config/topics.yaml`:
 
 Current settings in the same file:
 
-- Four drafts per topic per run.
+- Two drafts per topic per run.
 - A 30-day research window. Articles without a readable publication date are dropped.
 - Minimum audience-fit score of 4 for the research analyst's topics.
 - Post length between 700 and 1,300 characters, with a banned-phrase list.
